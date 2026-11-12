@@ -982,7 +982,7 @@ private:
 	static uint32_t wrapTGLProbePort(void *port);
 	static bool wrapTGLFramebufferStart(IOService *that, IOService *provider);
 	static bool wrapTGLAcceleratorStart(IOService *that, IOService *provider);
-	IOReturn XE::wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag);
+	IOReturn wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag);
 	mach_vm_address_t orgTGLAcceleratorPAVP{};
     static XE *callbackXE;
     KernelPatcher::KextInfo *currentGraphics {};
