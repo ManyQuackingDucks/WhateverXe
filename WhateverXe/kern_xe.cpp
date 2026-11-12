@@ -11639,6 +11639,14 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			const bool ok = patcher.routeMultiple(index, &request, 1, address, size);
 			SYSLOG("igfx", "TGL accelerator start route=%d", ok);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGAcceleratorStartRouted", ok);
+			//stupid routing thing
+			KernelPatcher::RouteRequest pavp("__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb",
+				wrapTGLAcceleratorPAVP, orgTGLAcceleratorPAVP);
+			const bool pavpOK = adlnDetected &&
+				patcher.solveSymbol<mach_vm_address_t>(index, pavp.symbol, address, size) == address + 0x29C50 &&
+				patcher.routeMultiple(index, &pavp, 1, address, size);
+			patcher.clearError();
+			IORegistryEntry::getRegistryRoot()->setProperty("WEXPAVPGuardRouted", pavpOK);
 			// Check native helper bytes BEFORE existing GuC diagnostic routes.
 			// PRM Vol2c part1 pp121-124: valid + force even for empty ring restore.
 			const uint8_t cpsAllocHead[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50,0x41,0x89,0xce,0x41,0x89,0xd7,0x49,0x89,0xf4};
@@ -14257,6 +14265,16 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
   return live==~0U?0:(live>>(8*fia.index))&15;
  }
 	return FunctionCast(wrapTGLLaneMask, callbackXE->orgTGLLaneMask)(port);
+}
+// Apple's TGL PAVP handler reads a field at +0xb8 of the object stored at
+// accelerator+0x1278 (A7A9 panic: PAVPCommandCallback+0x177, CR2=0xb8, RAX=0).
+// With that object absent, report PAVP as unavailable instead of dereferencing it.
+IOReturn XE::wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag) {
+	if (!*reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(that) + 0x1278)) {
+		IORegistryEntry::getRegistryRoot()->setProperty("WEXPAVPNullObjectBypassed", true);
+		return kIOReturnError;
+	}
+	return FunctionCast(wrapTGLAcceleratorPAVP, callbackXE->orgTGLAcceleratorPAVP)(that, command, value, out, flag);
 }
 
 bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
