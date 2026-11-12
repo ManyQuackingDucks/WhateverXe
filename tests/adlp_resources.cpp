@@ -4,12 +4,14 @@
 #include <cassert>
 #include <cstdio>
 #include <initializer_list>
+#include "gen12_resource_cases.hpp"
 using namespace XELP;
 int main() {
     // Hardware captures: 46A6, six DSS, 96 EU, eight L3 banks, VCS0/2.
     uint32_t f[]={1,0x3f,0,0,0xe00fa};GTResources r;
     assert(decodeADLPGT(f,r) && r.dss==6 && r.nativeSubslices==12 && r.eus==96 && r.l3Banks==8 && r.urbKiB==512);
     assert(!decodeSmallGT(f,r));
+    ResourceCases::check(decodeADLPGT);
     // i3-1315U small media engine: same resource envelope with the secondary
     // VCS2 slot populated instead of the primary VCS0 pair.
     uint32_t i3[]={1,0x3f,0,0,0xe00fb};GTResources r3;
