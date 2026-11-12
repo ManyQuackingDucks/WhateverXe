@@ -14269,7 +14269,7 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
 // Apple's TGL PAVP handler reads a field at +0xb8 of the object stored at
 // accelerator+0x1278 (A7A9 panic: PAVPCommandCallback+0x177, CR2=0xb8, RAX=0).
 // With that object absent, report PAVP as unavailable instead of dereferencing it.
-IOReturn XE::wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag) {
+static IOReturn XE::wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag) {
 	if (!*reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(that) + 0x1278)) {
 		IORegistryEntry::getRegistryRoot()->setProperty("WEXPAVPNullObjectBypassed", true);
 		return kIOReturnError;
