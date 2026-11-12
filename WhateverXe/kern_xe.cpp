@@ -743,7 +743,15 @@ static OSObject *adlnInitialRCSFactory(void *task,const void *params,uint8_t opt
   auto root=IORegistryEntry::getRegistryRoot();
   root->setProperty("WEXMediaContextBlocked",true);
   root->setProperty("WEXMediaContextParams",const_cast<void *>(params),0x100);
-  return nullptr;
+  // Experimental: -wex-video-type4 gives the context engine type 4 (the VDBOX2 streamer A7A9 has)
+  // instead of type 3 (scheduler mask bit 3, absent). Only the first byte of the params changes.
+  static uint8_t remapped[0x100];
+  if(checkKernelArgument("-wex-video-type4") && params && static_cast<const uint8_t *>(params)[0]==3) {
+   memcpy(remapped,params,sizeof(remapped));
+   remapped[0]=4;
+   params=remapped;
+   root->setProperty("WEXMediaContextRemapped",true);
+  } else return nullptr;
  }
  const bool initial=caller==adlnInitialRCSCallers[0] || caller==adlnInitialRCSCallers[1];
  const bool runtime=(checkKernelArgument("-wex-adln-rcs-no-pocs") || adlnNativeRCSProfileRequested) && caller==adlnRuntimeRCSCaller;
