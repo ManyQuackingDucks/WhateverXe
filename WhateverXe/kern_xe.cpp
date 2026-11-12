@@ -11303,6 +11303,14 @@ bool XE::processAlderLakeNTaskBoundary(KernelPatcher &patcher, size_t index, mac
 }
 
 bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+ KernelPatcher::RouteRequest media("__ZN25IGHardwareRingBufferMedia4initEP17IGHardwareContext",
+	 wrapTGLMediaRingBufferInit, orgTGLMediaRingBufferInit);
+ const bool mediaOK = adlnDetected &&
+	 patcher.solveSymbol<mach_vm_address_t>(index, media.symbol, address, size) == address + 0x6D9B8 &&
+	 patcher.routeMultiple(index, &media, 1, address, size);
+ patcher.clearError();
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXMediaRingGuardRouted", mediaOK);
+
  if(adlnDetected && tglAcceleratorRequested)dsiBackingHooksReady=processDSIBackingHooks(patcher,index,address,size);
  // Framebuffer-only mode must never enter the donor accelerator probe.
  // The bring-up payload omits this bundle; also reject it if already present.
@@ -14270,13 +14278,6 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
 // accelerator+0x1278 (A7A9 panic: PAVPCommandCallback+0x177, CR2=0xb8, RAX=0).
 // With that object absent, report PAVP as unavailable instead of dereferencing it.
 IOReturn XE::wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag) {
-	KernelPatcher::RouteRequest media("__ZN25IGHardwareRingBufferMedia4initEP17IGHardwareContext",
-		wrapTGLMediaRingBufferInit, orgTGLMediaRingBufferInit);
-	const bool mediaOK = adlnDetected &&
-		patcher.solveSymbol<mach_vm_address_t>(index, media.symbol, address, size) == address + 0x6D9B8 &&
-		patcher.routeMultiple(index, &media, 1, address, size);
-	patcher.clearError();
-	IORegistryEntry::getRegistryRoot()->setProperty("WEXMediaRingGuardRouted", mediaOK);
 	if (!*reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(that) + 0x1278)) {
 		IORegistryEntry::getRegistryRoot()->setProperty("WEXPAVPNullObjectBypassed", true);
 		return kIOReturnError;
