@@ -99,7 +99,7 @@ template<class IO> GTReadout readGT(IO &io, bool admitted, uint32_t *edram=nullp
         if(out.status==GTStatus::Complete &&
            !(decode ? decode(out.fuses,out.resources) :
              (resources(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources) &&
-              out.fuses[4]==0x000E00FE)))out.status=GTStatus::ProfileMismatch;
+              XELP::videoEngine(out.fuses[4]))))out.status=GTStatus::ProfileMismatch;
         if(edram) {
             *edram=io.readable(0x120010) ? io.read(0x120010) : UINT32_MAX;
             if(*edram==UINT32_MAX)out.status=GTStatus::Unavailable;

@@ -24,14 +24,22 @@ inline bool smallGTResources(uint32_t slice, uint32_t dss, uint32_t euDisable,
     return true;
 }
 
-// TGL GT1 and ADL/RPL-S use the same Gen12 fuse fields. VCS2 is optional;
-// both require VCS0 and VECS0. Product admission is the caller's policy.
+// Gen12 media-engine fuse window. The complement-encoded low byte carries the
+// primary VCS0 pair (bit0) and the optional VCS2 (bit2); bits 16..19 carry the
+// enhance window, which must be present. Small-GT donors require the primary
+// VCS0 pair, but fused parts that populate only the secondary VCS2 slot report
+// the same supported resource envelope and decode through this pattern.
+inline bool videoEngine(uint32_t fuses) {
+    const auto video=(~fuses)&0xFF,enhance=((~fuses)>>16)&0xF;
+    return enhance==1 && (video==1 || video==4 || video==5);
+}
+// TGL GT1 and ADL/RPL-S use the same Gen12 fuse fields, qualified through the
+// shared media-engine window above. Product admission is the caller's policy.
 inline bool decodeSmallGT(const uint32_t *fuses, SmallGTResources &out) {
     out={};
     if(!fuses)return false;
     for(unsigned i=0;i<5;++i)if(fuses[i]==UINT32_MAX)return false;
-    const auto video=(~fuses[4])&0xFF,enhance=((~fuses[4])>>16)&0xF;
-    if((video!=1 && video!=5) || enhance!=1)return false;
+    if(!videoEngine(fuses[4]))return false;
     return smallGTResources(fuses[0]&0xFF,fuses[1]&0x3F,
                            fuses[2]&0xFF,fuses[3]&0xFF,out);
 }
@@ -44,8 +52,7 @@ inline bool decodeADLPGT(const uint32_t *fuses, GTResources &out) {
     if(!fuses)return false;
     for(unsigned i=0;i<5;++i)if(fuses[i]==UINT32_MAX)return false;
     const auto slice=fuses[0]&0xFF,mask=fuses[1]&0x3F;
-    const auto video=(~fuses[4])&0xFF,enhance=((~fuses[4])>>16)&0xF;
-    if(slice!=1 || !mask || (video!=1 && video!=5) || enhance!=1)return false;
+    if(slice!=1 || !mask || !videoEngine(fuses[4]))return false;
     const auto dss=static_cast<uint32_t>(__builtin_popcount(mask));
     const auto perDSS=2*(8-static_cast<uint32_t>(__builtin_popcount(fuses[2]&0xFF)));
     const auto banks=8-static_cast<uint32_t>(__builtin_popcount(fuses[3]&0xFF));

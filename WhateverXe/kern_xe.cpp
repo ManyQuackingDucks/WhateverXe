@@ -7634,7 +7634,12 @@ uint8_t *XE::display13SSTPort(void *port) {
  auto p=static_cast<uint8_t *>(port);auto config=Display13FBMemory::field<uint32_t *>(p,0x548);
  if(!Display13FBTopology::selected(s->adlnPlatform,config,s->adlnOutputWiring) ||
     !(s->adlnOutputWiring.links()&(1U<<config[0])) || p[0x117] ||
-    Display13FBMemory::field<uint32_t>(p,0x120)!=config[0] || Display13FBMemory::field<uint32_t>(p,0x550)!=(config[0]>=3?((s->adlnOutputWiring.typeC&(1U<<config[0]))?3U:4U):1U) ||
+    Display13FBMemory::field<uint32_t>(p,0x120)!=config[0] ||
+    // Combo ports: the donor reports 1 for an active DP SST link and 0 for the
+    // firmware/GOP-driven eDP boot port on RPL-U. The AUX path already treats
+    // any value up to 1 as valid; only values above 1 are invalid there.
+    // Type-C ports keep their exact 3/4 mode.
+    (config[0]>=3 ? Display13FBMemory::field<uint32_t>(p,0x550)!=((s->adlnOutputWiring.typeC&(1U<<config[0]))?3U:4U) : Display13FBMemory::field<uint32_t>(p,0x550)>1U) ||
     Display13FBMemory::field<void *>(p,0x578)!=c.access)return nullptr;
  return p;
 }
@@ -11303,6 +11308,14 @@ bool XE::processAlderLakeNTaskBoundary(KernelPatcher &patcher, size_t index, mac
 }
 
 bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+ KernelPatcher::RouteRequest media("__ZN25IGHardwareRingBufferMedia4initEP17IGHardwareContext",
+	 wrapTGLMediaRingBufferInit, orgTGLMediaRingBufferInit);
+ const bool mediaOK = adlnDetected &&
+	 patcher.solveSymbol<mach_vm_address_t>(index, media.symbol, address, size) == address + 0x6D9B8 &&
+	 patcher.routeMultiple(index, &media, 1, address, size);
+ patcher.clearError();
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXMediaRingGuardRouted", mediaOK);
+
  if(adlnDetected && tglAcceleratorRequested)dsiBackingHooksReady=processDSIBackingHooks(patcher,index,address,size);
  // Framebuffer-only mode must never enter the donor accelerator probe.
  // The bring-up payload omits this bundle; also reject it if already present.
@@ -11639,6 +11652,14 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			const bool ok = patcher.routeMultiple(index, &request, 1, address, size);
 			SYSLOG("igfx", "TGL accelerator start route=%d", ok);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGAcceleratorStartRouted", ok);
+			//stupid routing thing
+			KernelPatcher::RouteRequest pavp("__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb",
+				wrapTGLAcceleratorPAVP, orgTGLAcceleratorPAVP);
+			const bool pavpOK = adlnDetected &&
+				patcher.solveSymbol<mach_vm_address_t>(index, pavp.symbol, address, size) == address + 0x29C50 &&
+				patcher.routeMultiple(index, &pavp, 1, address, size);
+			patcher.clearError();
+			IORegistryEntry::getRegistryRoot()->setProperty("WEXPAVPGuardRouted", pavpOK);
 			// Check native helper bytes BEFORE existing GuC diagnostic routes.
 			// PRM Vol2c part1 pp121-124: valid + force even for empty ring restore.
 			const uint8_t cpsAllocHead[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50,0x41,0x89,0xce,0x41,0x89,0xd7,0x49,0x89,0xf4};
@@ -14258,8 +14279,44 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
  }
 	return FunctionCast(wrapTGLLaneMask, callbackXE->orgTGLLaneMask)(port);
 }
+// Apple's TGL PAVP handler reads a field at +0xb8 of the object stored at
+// accelerator+0x1278 (A7A9 panic: PAVPCommandCallback+0x177, CR2=0xb8, RAX=0).
+// With that object absent, report PAVP as unavailable instead of dereferencing it.
+IOReturn XE::wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag) {
+	IORegistryEntry::getRegistryRoot()->setProperty("WEXEngineMask",
+		reinterpret_cast<uint8_t*>(that) + 0x1300, 16);
+	if (!*reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(that) + 0x1278)) {
+		IORegistryEntry::getRegistryRoot()->setProperty("WEXPAVPNullObjectBypassed", true);
+		return kIOReturnError;
+	}
+	return FunctionCast(wrapTGLAcceleratorPAVP, callbackXE->orgTGLAcceleratorPAVP)(that, command, value, out, flag);
+}
+
+// A7A9: the video ring buffer binds to a command streamer the scheduler does not have
+// (panic IGScheduler5::bind -> setWorkQueueBinding with this==NULL). Fail init cleanly.
+bool XE::wrapTGLMediaRingBufferInit(void* that, void* hwContext) {
+	IORegistryEntry::getRegistryRoot()->setProperty("WEXMediaRingInitBlocked", true);
+	return false;
+}
 
 bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
+//stupid debug block
+SYSLOG("igfx", "TGL start wrapper entered that=%llx provider=%llx",
+	(unsigned long long)reinterpret_cast<uintptr_t>(that),
+	(unsigned long long)reinterpret_cast<uintptr_t>(provider));
+auto r = IORegistryEntry::getRegistryRoot();
+r->setProperty("WEXDbgStartEntered", true);
+r->setProperty("WEXDbgStartFlags",
+	(uint32_t)((callbackXE->adlnDetected ? 1 : 0) | (adlnNativeRCSProfileRequested ? 2 : 0) |
+		(adlnNativeRCSProfileReady ? 4 : 0) | (callbackXE->tglGT2Detected ? 8 : 0) |
+		(callbackXE->tglGT2Ready ? 16 : 0) | (callbackXE->display12SmallGTDetected ? 32 : 0) |
+		(callbackXE->display12SmallGTReady ? 64 : 0)), 32);
+const uint32_t wexFlags = (uint32_t)((callbackXE->adlnDetected ? 1 : 0) | (adlnNativeRCSProfileRequested ? 2 : 0) |
+	(adlnNativeRCSProfileReady ? 4 : 0) | (callbackXE->tglGT2Detected ? 8 : 0) |
+	(callbackXE->tglGT2Ready ? 16 : 0) | (callbackXE->display12SmallGTDetected ? 32 : 0) |
+	(callbackXE->display12SmallGTReady ? 64 : 0));
+IOLog("WEXDBG start entered flags=%u\n", wexFlags);
+//stupid debug block end
  if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
     (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && (!callbackXE->adlsDisplayHooksReady ||

@@ -168,6 +168,11 @@ int main() {
     auto ready=AlderLakeN::readGT(gt,true);
     assert(ready.status==AlderLakeN::GTStatus::Complete && ready.writes==4 && ready.requestedMask==3 && ready.releasedMask==3);
     assert(ready.resources.eus==24 && ready.resources.l3Banks==4 && ready.count==16 && (gt.regs[0xA188]&0xFFFF)==8);
+    // i3-1315U small media engine: secondary VCS2 fused pattern with the same
+    // small-GT resource envelope now completes the readout instead of rejecting.
+    auto small=firmwareGT();small.regs[0xA188]=8;small.regs[0x130044]=8;small.regs[0x9140]=0xe00fb;
+    auto smallReady=AlderLakeN::readGT(small,true);
+    assert(smallReady.status==AlderLakeN::GTStatus::Complete && smallReady.resources.eus==24);
     // T8 Pro Ubuntu readout: 46D2/rev0, one DSS with all eight EU pairs.
     // Verify the full fuse-read path, including balanced forcewake release.
     auto t8=firmwareGT();t8.regs[0x913c]=1;t8.regs[0x9134]=0;

@@ -47,7 +47,7 @@ void check(unsigned id,unsigned rev,unsigned dss,unsigned eu,unsigned media) {
 int main() {
  // Three GT1 identities and 16/32-EU HX identities use fuse-derived topology.
  for(auto id:{0x9a60U,0x9a68U,0x9a70U,0x4688U,0x468bU,0xa788U,0xa78bU})
- for(auto rev:{0U,1U,4U,12U,255U})for(auto video:{0xe00feU,0xe00faU}) {
+ for(auto rev:{0U,1U,4U,12U,255U})for(auto video:{0xe00feU,0xe00faU,0xe00fbU}) {
   check(id,rev,1,0,video); // 16 EU, one DSS, two native subslices
   check(id,rev,3,0xc0,video); // 24 EU, two DSS
   check(id,rev,0x30,0,video); // 32 EU, sparse DSS mask

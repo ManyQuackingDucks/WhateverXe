@@ -986,8 +986,10 @@ private:
 	static uint32_t wrapTGLProbePort(void *port);
 	static bool wrapTGLFramebufferStart(IOService *that, IOService *provider);
 	static bool wrapTGLAcceleratorStart(IOService *that, IOService *provider);
-
-
+	static IOReturn wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t value, uint32_t* out, bool flag);
+	static bool wrapTGLMediaRingBufferInit(void* that, void* hwContext);
+	mach_vm_address_t orgTGLMediaRingBufferInit{};
+	mach_vm_address_t orgTGLAcceleratorPAVP{};
     static XE *callbackXE;
     KernelPatcher::KextInfo *currentGraphics {};
     KernelPatcher::KextInfo *currentFramebuffer {};
