@@ -728,12 +728,23 @@ static uint64_t adlnKernelReuseReceipt[16] {1};
 static uintptr_t adlnInitialRCSFactoryOriginal,adlnInitialRCSCallers[2],adlnInitialRCSParams,adlnInitialRCSGLParams;
 static uint64_t adlnInitialRCSReceipt[4+2*12] {1,2,12,0},adlnInitialRCSCopyReceipt[12] {1};
 static uintptr_t adlnRuntimeRCSCaller,adlnRuntimeRCSParams;
+// Return address inside IGAccelVideoContextMedia::processDataBuffers after its withOptions call (0 = not armed).
+static uintptr_t adlnMediaVideoCaller;
 static uint64_t adlnRuntimeRCSReceipt[4+8*12] {1,8,12,0};
 static bool adlnNativeRCSProfileReady;
 // Selected once from the admitted backend; the explicit context trial stays separate.
 static bool adlnNativeRCSProfileRequested;
 static OSObject *adlnInitialRCSFactory(void *task,const void *params,uint8_t options) {
  const auto caller=reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+ // A7A9 has no streamer for the engine type the video context requests (scheduler mask bit 3 clear),
+ // so Apple's IGScheduler5::bind would call through a NULL streamer. processDataBuffers handles a NULL
+ // context as an ordinary failure, so refuse the request before anything is constructed.
+ if(adlnMediaVideoCaller && caller==adlnMediaVideoCaller) {
+  auto root=IORegistryEntry::getRegistryRoot();
+  root->setProperty("WEXMediaContextBlocked",true);
+  root->setProperty("WEXMediaContextParams",const_cast<void *>(params),0x100);
+  return nullptr;
+ }
  const bool initial=caller==adlnInitialRCSCallers[0] || caller==adlnInitialRCSCallers[1];
  const bool runtime=(checkKernelArgument("-wex-adln-rcs-no-pocs") || adlnNativeRCSProfileRequested) && caller==adlnRuntimeRCSCaller;
  if(initial && (reinterpret_cast<uintptr_t>(params)!=adlnInitialRCSParams || options!=2 ||
@@ -11308,13 +11319,12 @@ bool XE::processAlderLakeNTaskBoundary(KernelPatcher &patcher, size_t index, mac
 }
 
 bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
- KernelPatcher::RouteRequest media("__ZN25IGHardwareRingBufferMedia4initEP17IGHardwareContext",
-	 wrapTGLMediaRingBufferInit, orgTGLMediaRingBufferInit);
- const bool mediaOK = adlnDetected &&
-	 patcher.solveSymbol<mach_vm_address_t>(index, media.symbol, address, size) == address + 0x6D9B8 &&
-	 patcher.routeMultiple(index, &media, 1, address, size);
+ // processDataBuffers starts at +0x40C3C; its withOptions call returns to +0x40C83.
+ adlnMediaVideoCaller = (adlnDetected &&
+	 patcher.solveSymbol<mach_vm_address_t>(index, "__ZN24IGAccelVideoContextMedia18processDataBuffersEj", address, size) == address + 0x40C3C)
+	 ? address + 0x40C83 : 0;
  patcher.clearError();
- IORegistryEntry::getRegistryRoot()->setProperty("WEXMediaRingGuardRouted", mediaOK);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXMediaContextGuardArmed", adlnMediaVideoCaller != 0);
 
  if(adlnDetected && tglAcceleratorRequested)dsiBackingHooksReady=processDSIBackingHooks(patcher,index,address,size);
  // Framebuffer-only mode must never enter the donor accelerator probe.
@@ -14290,13 +14300,6 @@ IOReturn XE::wrapTGLAcceleratorPAVP(IOService* that, uint32_t command, uint32_t 
 		return kIOReturnError;
 	}
 	return FunctionCast(wrapTGLAcceleratorPAVP, callbackXE->orgTGLAcceleratorPAVP)(that, command, value, out, flag);
-}
-
-// A7A9: the video ring buffer binds to a command streamer the scheduler does not have
-// (panic IGScheduler5::bind -> setWorkQueueBinding with this==NULL). Fail init cleanly.
-bool XE::wrapTGLMediaRingBufferInit(void* that, void* hwContext) {
-	IORegistryEntry::getRegistryRoot()->setProperty("WEXMediaRingInitBlocked", true);
-	return false;
 }
 
 bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
