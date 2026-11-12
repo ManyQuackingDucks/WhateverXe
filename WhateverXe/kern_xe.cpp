@@ -14260,6 +14260,17 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
 }
 
 bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
+SYSLOG("igfx", "TGL start wrapper entered that=%llx provider=%llx",
+	(unsigned long long)reinterpret_cast<uintptr_t>(that),
+	(unsigned long long)reinterpret_cast<uintptr_t>(provider));
+auto r = IORegistryEntry::getRegistryRoot();
+r->setProperty("WEXDbgStartEntered", true);
+r->setProperty("WEXDbgStartFlags",
+	(uint32_t)((callbackXE->adlnDetected ? 1 : 0) | (adlnNativeRCSProfileRequested ? 2 : 0) |
+		(adlnNativeRCSProfileReady ? 4 : 0) | (callbackXE->tglGT2Detected ? 8 : 0) |
+		(callbackXE->tglGT2Ready ? 16 : 0) | (callbackXE->display12SmallGTDetected ? 32 : 0) |
+		(callbackXE->display12SmallGTReady ? 64 : 0)), 32);
+
  if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
     (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && (!callbackXE->adlsDisplayHooksReady ||
