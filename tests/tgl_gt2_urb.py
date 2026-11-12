@@ -60,7 +60,7 @@ int main() {
   assert(tglGT2Ready==((status==AlderLakeN::GTStatus::Complete || status==AlderLakeN::GTStatus::ProfileMismatch) && mask==3 && release==3 && failed==0));
  }
  for(auto id:{0x9a40U,0x9a49U,0x9a78U,0x9a59U,0x9ac0U,0x9ac9U,0x9ad9U,0x9af8U})
- for(auto rev:{0U,1U,2U,3U,4U,255U})for(auto video:{0xe00feU,0xe00faU}) {
+ for(auto rev:{0U,1U,2U,3U,4U,255U})for(auto video:{0xe00feU,0xe00faU,0xe00fbU}) {
   check(id,rev,7,0xc0,video); // 48 EU, three DSS, six banks
   check(id,rev,0x3e,0,video); // 80 EU, five DSS, eight banks
   check(id,rev,0x3f,0,video); // 96 EU, six DSS, eight banks

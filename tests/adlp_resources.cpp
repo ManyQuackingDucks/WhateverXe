@@ -10,6 +10,10 @@ int main() {
     uint32_t f[]={1,0x3f,0,0,0xe00fa};GTResources r;
     assert(decodeADLPGT(f,r) && r.dss==6 && r.nativeSubslices==12 && r.eus==96 && r.l3Banks==8 && r.urbKiB==512);
     assert(!decodeSmallGT(f,r));
+    // i3-1315U small media engine: same resource envelope with the secondary
+    // VCS2 slot populated instead of the primary VCS0 pair.
+    uint32_t i3[]={1,0x3f,0,0,0xe00fb};GTResources r3;
+    assert(decodeADLPGT(i3,&r3) && r3.eus==96 && r3.l3Banks==8);
     for(unsigned mask=1;mask<64;++mask)for(unsigned eu=0;eu<256;++eu)for(unsigned l3=0;l3<256;++l3) {
         uint32_t v[]={1,mask,eu,l3,0xe00fa};
         const auto per=2*(8-__builtin_popcount(eu)),banks=8-__builtin_popcount(l3);
