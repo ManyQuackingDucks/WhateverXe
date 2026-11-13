@@ -2475,11 +2475,18 @@ volatile uint8_t *tglHostBase() {
 // and publish the ack plus VCS0/VCS2 ring registers, to see whether the second video box is reachable.
 extern "C" __attribute__((noinline,used)) void wexWakeVdbox2(void) {
  static bool done;
- auto b=tglHostBase(); if (!b || done) return;
- done=true;
- *reinterpret_cast<volatile uint32_t *>(b+0xA548)=0x00010001;
- uint32_t ack=0;
- for (uint32_t i=0;i<50000;++i) { ack=*reinterpret_cast<volatile uint32_t *>(b+0xD58); if (ack&1) break; }
+ auto b=tglHostBase(); if (!b) return;
+ uint32_t ack=*reinterpret_cast<volatile uint32_t *>(b+0xD58);
+ if (!done) {
+  done=true;
+  *reinterpret_cast<volatile uint32_t *>(b+0xA548)=0x00010001;
+  for (uint32_t i=0;i<50000;++i) { ack=*reinterpret_cast<volatile uint32_t *>(b+0xD58); if (ack&1) break; }
+ }
+ // Re-sampled on every video context creation: interrupt routing, ring IMR/IIR, execlist status, power gating.
+ const uint32_t pr[]{0x190018,0x190034,0x190054,0x190058,0x1D0098,0x1D00A8,0x1D0234,0x1D0238,0x1D0030,0x1D0034,0xA218,0xD58};
+ uint32_t pv[arrsize(pr)];
+ for (uint32_t i=0;i<arrsize(pr);++i) pv[i]=*reinterpret_cast<volatile uint32_t *>(b+pr[i]);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXVdbox2Probe",pv,sizeof(pv));
  uint32_t r[8];
  const uint32_t off[]{0x30,0x34,0x80,0x29C};
  for (uint32_t i=0;i<4;++i) {
