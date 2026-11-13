@@ -2491,6 +2491,11 @@ extern "C" __attribute__((noinline,used)) void wexWakeVdbox2(void) {
  uint32_t pv[arrsize(pr)];
  for (uint32_t i=0;i<arrsize(pr);++i) pv[i]=*reinterpret_cast<volatile uint32_t *>(b+pr[i]);
  IORegistryEntry::getRegistryRoot()->setProperty("WEXVdbox2Probe",pv,sizeof(pv));
+ // GT frequency / RC state: RPSTAT1, RPNSWREQ, RP_CONTROL, RC_CONTROL, RP_STATE_CAP, RPSTAT0
+ const uint32_t fr[]{0xA01C,0xA008,0xA024,0xA090,0x138170,0xA014};
+ uint32_t fv[arrsize(fr)];
+ for (uint32_t i=0;i<arrsize(fr);++i) fv[i]=*reinterpret_cast<volatile uint32_t *>(b+fr[i]);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXGtFreq",fv,sizeof(fv));
  uint32_t r[8];
  const uint32_t off[]{0x30,0x34,0x80,0x29C};
  for (uint32_t i=0;i<4;++i) {
