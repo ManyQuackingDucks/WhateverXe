@@ -2496,16 +2496,6 @@ extern "C" __attribute__((noinline,used)) void wexWakeVdbox2(void) {
  uint32_t fv[arrsize(fr)];
  for (uint32_t i=0;i<arrsize(fr);++i) fv[i]=*reinterpret_cast<volatile uint32_t *>(b+fr[i]);
  IORegistryEntry::getRegistryRoot()->setProperty("WEXGtFreq",fv,sizeof(fv));
- // Per-class GT interrupt masks (Linux names: BCS 0x190094, VCS0_VCS1 0x190098, VCS2_VCS3 0x19009C, VECS 0x1900A0).
- // Apple's IRQ setup zeroes 0x190090/0x1900A0 etc. but never touches 0x190094/98/9C. Optionally unmask the video ones.
- if (checkKernelArgument("-wex-vcs-irq-unmask")) {
-  *reinterpret_cast<volatile uint32_t *>(b+0x190098)=0;
-  *reinterpret_cast<volatile uint32_t *>(b+0x19009C)=0;
- }
- const uint32_t ir[]{0x190018,0x19001C,0x190090,0x190094,0x190098,0x19009C,0x1900A0};
- uint32_t iv[arrsize(ir)];
- for (uint32_t i=0;i<arrsize(ir);++i) iv[i]=*reinterpret_cast<volatile uint32_t *>(b+ir[i]);
- IORegistryEntry::getRegistryRoot()->setProperty("WEXGtIrqMasks",iv,sizeof(iv));
  uint32_t r[8];
  const uint32_t off[]{0x30,0x34,0x80,0x29C};
  for (uint32_t i=0;i<4;++i) {
