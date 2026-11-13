@@ -2,6 +2,8 @@
 #include <mach/clock.h>
 #include <IOKit/IOMessage.h>
 #include <IOKit/graphics/IOGraphicsTypes.h>
+#include <IOKit/IOTimerEventSource.h>
+#include <IOKit/IOWorkLoop.h>
 //
 //  kern_xe.cpp
 //  WhateverGreen
@@ -2471,6 +2473,39 @@ volatile uint8_t *tglHostBase() {
  return tglHost.owner && tglHost.barSize>=0x1000000 ?
   *reinterpret_cast<volatile uint8_t **>(static_cast<uint8_t *>(tglHost.owner)+0x1240) : nullptr;
 }
+// Experimental: -wex-vdbox2-sample runs a 1 ms timer that watches VDBOX2 ring HEAD/TAIL and publishes
+// WEXVdbox2Sample = {samples, busySamples, headChanges, longestStallSamples, head, tail, execStatus, bursts}
+// once per second, to show whether the decode engine is continuously fed or fed in bursts.
+static IOTimerEventSource *wexSampleTimer;
+static void wexSampleTick(OSObject *, IOTimerEventSource *t) {
+ static uint32_t samples,busy,changes,stall,longest,lastHead=~0U,bursts,wasBusy;
+ auto b=tglHostBase();
+ if (b) {
+  const uint32_t head=*reinterpret_cast<volatile uint32_t *>(b+0x1D0034);
+  const uint32_t tail=*reinterpret_cast<volatile uint32_t *>(b+0x1D0030);
+  const uint32_t st=*reinterpret_cast<volatile uint32_t *>(b+0x1D0234);
+  ++samples;
+  const bool isBusy=head!=tail;
+  if (isBusy) { ++busy; if (!wasBusy) ++bursts; }
+  wasBusy=isBusy;
+  if (head!=lastHead) { ++changes; lastHead=head; stall=0; }
+  else if (isBusy) { if (++stall>longest) longest=stall; }
+  if (samples%1000==0) {
+   uint32_t v[8]{samples,busy,changes,longest,head,tail,st,bursts};
+   IORegistryEntry::getRegistryRoot()->setProperty("WEXVdbox2Sample",v,sizeof(v));
+  }
+ }
+ t->setTimeoutMS(1);
+}
+static void wexStartSampler(void) {
+ if (wexSampleTimer) return;
+ auto loop=IOWorkLoop::workLoop();
+ if (!loop) return;
+ auto t=IOTimerEventSource::timerEventSource(IORegistryEntry::getRegistryRoot(),wexSampleTick);
+ if (!t || loop->addEventSource(t)!=kIOReturnSuccess) { if (t) t->release(); loop->release(); return; }
+ wexSampleTimer=t;
+ t->setTimeoutMS(1);
+}
 // Experimental: take the VDBOX2 media forcewake (gen11+ FORCEWAKE_MEDIA_VDBOX(2): req 0xA548, ack 0xD58)
 // and publish the ack plus VCS0/VCS2 ring registers, to see whether the second video box is reachable.
 extern "C" __attribute__((noinline,used)) void wexWakeVdbox2(void) {
@@ -2486,6 +2521,7 @@ extern "C" __attribute__((noinline,used)) void wexWakeVdbox2(void) {
   if (done) IORegistryEntry::getRegistryRoot()->setProperty("WEXVdbox2Rewakes",++rewakes,32);
  }
  done=true;
+ if (checkKernelArgument("-wex-vdbox2-sample")) wexStartSampler();
  // Re-sampled on every video context creation: interrupt routing, ring IMR/IIR, execlist status, power gating.
  const uint32_t pr[]{0x190018,0x190034,0x190054,0x190058,0x1D0098,0x1D00A8,0x1D0234,0x1D0238,0x1D0030,0x1D0034,0xA218,0xD58};
  uint32_t pv[arrsize(pr)];
