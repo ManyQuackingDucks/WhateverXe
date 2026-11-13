@@ -734,6 +734,7 @@ static uint64_t adlnRuntimeRCSReceipt[4+8*12] {1,8,12,0};
 static bool adlnNativeRCSProfileReady;
 // Selected once from the admitted backend; the explicit context trial stays separate.
 static bool adlnNativeRCSProfileRequested;
+extern "C" void wexWakeVdbox2(void);
 static OSObject *adlnInitialRCSFactory(void *task,const void *params,uint8_t options) {
  const auto caller=reinterpret_cast<uintptr_t>(__builtin_return_address(0));
  // A7A9 has no streamer for the engine type the video context requests (scheduler mask bit 3 clear),
@@ -751,6 +752,7 @@ static OSObject *adlnInitialRCSFactory(void *task,const void *params,uint8_t opt
    remapped[0]=4;
    params=remapped;
    root->setProperty("WEXMediaContextRemapped",true);
+   if(checkKernelArgument("-wex-vdbox2-wake")) wexWakeVdbox2();
   } else return nullptr;
  }
  const bool initial=caller==adlnInitialRCSCallers[0] || caller==adlnInitialRCSCallers[1];
@@ -2468,6 +2470,25 @@ const uint32_t tglHostRegs[] {0x2030,0x2034,0x2038,0x203C,0x2064,0x2068,
 volatile uint8_t *tglHostBase() {
  return tglHost.owner && tglHost.barSize>=0x1000000 ?
   *reinterpret_cast<volatile uint8_t **>(static_cast<uint8_t *>(tglHost.owner)+0x1240) : nullptr;
+}
+// Experimental: take the VDBOX2 media forcewake (gen11+ FORCEWAKE_MEDIA_VDBOX(2): req 0xA548, ack 0xD58)
+// and publish the ack plus VCS0/VCS2 ring registers, to see whether the second video box is reachable.
+extern "C" __attribute__((noinline,used)) void wexWakeVdbox2(void) {
+ static bool done;
+ auto b=tglHostBase(); if (!b || done) return;
+ done=true;
+ *reinterpret_cast<volatile uint32_t *>(b+0xA548)=0x00010001;
+ uint32_t ack=0;
+ for (uint32_t i=0;i<50000;++i) { ack=*reinterpret_cast<volatile uint32_t *>(b+0xD58); if (ack&1) break; }
+ uint32_t r[8];
+ const uint32_t off[]{0x30,0x34,0x80,0x29C};
+ for (uint32_t i=0;i<4;++i) {
+  r[i]=*reinterpret_cast<volatile uint32_t *>(b+0x1D0000+off[i]);
+  r[4+i]=*reinterpret_cast<volatile uint32_t *>(b+0x1C0000+off[i]);
+ }
+ auto root=IORegistryEntry::getRegistryRoot();
+ root->setProperty("WEXVdbox2WakeAck",ack,32);
+ root->setProperty("WEXVdbox2Regs",r,sizeof(r));
 }
 void tglHostClock(uint64_t *q) { uint64_t t; clock_get_uptime(&t); absolutetime_to_nanoseconds(t,q); }
 void tglHostRegisters(uint64_t *q) {
